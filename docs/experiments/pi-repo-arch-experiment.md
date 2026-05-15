@@ -1,0 +1,202 @@
+# pi repo-arch Experiment
+
+## Repo
+
+- Repo: fiale-plus/pi
+- Branch: repo_arch_pi_experiment_runbook
+- Commit: 40c05f55391663024a6a05ad33249b616a04e7a1
+- Date: 2026-05-13
+- repo-arch: installed via npm (`@fiale-plus/repo-arch`)
+
+## Stage
+
+- [x] extraction
+- [x] card review (partial)
+- [x] dataset generation
+- [x] retrieval eval
+- [x] local MLX LoRA
+- [ ] Modal Unsloth LoRA (future)
+- [x] behavioral eval (10-question sanity run completed)
+  - [ ] full 45-question eval (deferred — sanity results are conclusive)
+
+## Behavioral Eval Results
+
+### Setup
+- **Harness**: `scripts/eval_behavior.py` — runs each question through 3 modes
+- **Modes**: `base` (Qwen2.5-Coder-1.5B), `retrieval` (base model + repo-arch cards as context), `lora` (Qwen2.5-Coder-1.5B + adapter)
+- **Questions**: 10 highest-signal questions from the 45-question set
+- **Total calls**: 30 (10 questions x 3 modes)
+
+### Quantitative Summary
+
+| Metric | BASE | LORA | RETRIEVAL |
+|---|---|---|---|
+| 'No historical warnings' answers | 0/10 | **10/10** | 0/10 |
+| 'Would need to analyze' deflects | 5/10 | 0/10 | 0/10 |
+| Refusals | 1/10 | 0/10 | 0/10 |
+| File path mentions (total) | 14 | **0** | **62** |
+| Avg latency | 8.2s | **1.8s** | 8.1s |
+
+### Qualitative Findings
+
+**BASE (plain Qwen2.5-Coder-1.5B)**:
+- Hallucinates package names that don't exist in the repo ("pi-core", "pi-apps")
+- Deflects 50% of questions with "I would need to analyze the repository's git history"
+- One refusal ("I am committed to not discussing specific individuals")
+- Produces plausible-sounding but repo-unaware answers
+
+**LORA (adapter)**:
+- Every single answer: "No historical warnings found. Standard review applies."
+- Zero file path mentions, zero repo-specific content
+- The training data is 36/92 = 39% negative examples; the model learned to default to the negative pattern
+- With only 82 training examples, 100 iterations, and rank 8, the adapter did not learn useful behavior
+- **Net effect**: adapter is worse than the base model — training data is too small and too narrow
+
+**RETRIEVAL (base model + card context)**:
+- 62 file path mentions across 10 questions (4.4x more than base)
+- Zero deflections or refusals
+- Correctly identifies: reversion-prone files (CHANGELOG, README, theme.ts), untested high-churn files (agent-session.ts, models.generated.ts, package.json), co-change patterns
+- Still some hallucination on files not covered by cards (e.g., Q8 invented TUI component files)
+- **Clearly the winner** for repo-specific Q&A
+
+### Key Comparisons
+
+**Q4: Risk profile of changing agent-session.ts**
+- BASE: Generic "consider several factors" — no specific data
+- RETRIEVAL: "Modified 310 times without test change" — cites real metric
+- LORA: "No historical warnings found" — wrong (card exists about this file)
+
+**Q6: Files reverted most often**
+- BASE: "Would need to analyze the repository's Git history" — deflects
+- RETRIEVAL: Correctly lists CHANGELOG.md, README.md, theme.ts — real cards
+- LORA: "No historical warnings found" — wrong
+
+**Q7: Riskiest files in coding-agent**
+- BASE: "I do not have access to the specific git history" — refuses
+- RETRIEVAL: Lists package.json (317 changes, no tests), interactive-mode.ts (157 fixes), agent-session.ts (94 fixes) — real data
+- LORA: "No historical warnings found" — wrong
+
+### Verdict
+
+**The current LoRA adapter is not useful. Retrieval-only wins decisively.**
+
+Do not scale to cloud GPU or 7B training until:
+1. Training dataset is 10-100x larger with better question coverage
+2. Negative example ratio is reduced (< 20%)
+3. Training observability is fixed (loss logging, dataset hashes)
+4. Retrained adapter beats retrieval-only on behavioral eval
+
+## Extraction Results
+
+| Metric | Value |
+|---|---|
+| Commits scanned | 4,086 (full repo history) |
+| History file size | 3.1 MB (JSONL) |
+| Cards generated | 20 |
+| Cards accepted | 21 (in review state, some stale entries from regeneration) |
+| Cards rejected | 11 |
+| Training examples | 92 (82 train, 10 valid) |
+| Training data size | 27.7 KB |
+
+### Card Type Distribution (Accepted)
+
+| Type | Count | Description |
+|---|---|---|
+| co-change | 5 | Files that change together frequently (e.g., CHANGELOGs across packages) |
+| repeated-fix | 3 | Files with many fix commits (interactive-mode.ts, models.generated.ts, agent-session.ts) |
+| test-gap | 4 | High-churn files without corresponding test changes (models.generated.ts, interactive-mode.ts, package.json files) |
+
+### Eval Results
+
+| Strategy | Score |
+|---|---|
+| Keyword search | 100.0% (24/24) |
+| Embedding (semantic) | 33.3% (8/24) |
+
+**Best strategy**: keyword retrieval outperforms embedding for this dataset. Embedding misses fine-grained card titles (truncation in indexing). The 20-card corpus is small enough that keyword exact-match dominates.
+
+### Training Run
+
+| Parameter | Value |
+|---|---|
+| Base model | Qwen/Qwen2.5-Coder-1.5B-Instruct |
+| Method | LoRA via MLX |
+| LoRA rank | 8 |
+| LoRA layers | 4 |
+| Training iterations | 100 |
+| Learning rate | 1e-5 |
+| Batch size | 4 |
+| Max sequence length | 2048 |
+| Adapter path | `.repo-arch/adapters/repo-arch-40c05f5/` |
+| Adapter size | 5.0 MB (adapters.safetensors) |
+
+**Note**: Training loss values were not captured to a log file during the run. The adapter was saved at iteration 100 with a checkpoint also at step 100.
+
+## Quality Notes
+
+### What looked useful
+
+- **Co-change clusters**: The CHANGELOG co-change pattern across `ai`, `coding-agent`, and `tui` packages is a real signal — these always release together. The 432-commit cluster (`packages/ai/CHANGELOG.md` + `packages/coding-agent/CHANGELOG.md`) has high confidence (21.9).
+- **Repeated fix warnings**: `interactive-mode.ts` (157 fixes), `models.generated.ts` (105 fixes), and `agent-session.ts` (94 fixes) are genuine hot-spots.
+- **Test gap detection**: `models.generated.ts` (275 changes without test) and `interactive-mode.ts` (249 changes without test) are actionable findings.
+- **Embedding index**: Built and queryable via `repo-arch similar`.
+
+### What looked noisy
+
+- **Reversion patterns** (confidence 0.6): Many reversion cards point to CHANGELOGs and READMEs — these are mostly revert commits for documentation, not code instability. The low-confidence signals are correctly flagged as such.
+- **Design rationale clusters** (rejected): The generic `packages/` and `<root>/` clusters were too broad to be actionable.
+- **package-lock.json** repeated fixes: This is npm auto-churn, not a meaningful code pattern.
+
+### Package Separation Quality
+
+The cards implicitly respect package boundaries because co-change clustering is file-path based. However, there are no package-tagged cards — `repo-arch` does not group cards by package. Manual inspection shows:
+
+- `packages/coding-agent/` dominates the card set (7 of 20 cards)
+- `packages/ai/` is well-represented (5 cards)
+- `packages/tui/` appears in co-change clusters
+- `packages/web-ui/` is underrepresented
+
+### Most Useful Cards
+
+1. CHANGELOG co-change across ai + coding-agent (432 commits, confidence 21.9)
+2. CHANGELOG co-change across coding-agent + tui (362 commits, confidence 18.4)
+3. Repeated fixes in `interactive-mode.ts` (157 fixes)
+4. Repeated fixes in `models.generated.ts` (105 fixes)
+5. Test gap in `models.generated.ts` (275 changes, no tests)
+6. Test gap in `interactive-mode.ts` (249 changes, no tests)
+7. Co-change: coding-agent CHANGELOG + interactive-mode.ts (186 commits)
+8. Co-change: models.generated.ts + coding-agent CHANGELOG (147 commits)
+
+### Most Suspicious Cards
+
+- Reversion patterns on CHANGELOGs and READMEs (confidence 0.6) — documentation reverts are usually cosmetic
+- Design rationale clusters at package root level — too generic
+
+## Decision
+
+- [x] dataset quality is acceptable for a first pass; more curation would improve signal
+- [x] retrieval-only (keyword) is the right architecture; LoRA adds no value at current quality
+- [x] LoRA does NOT improve behavior — current adapter is worse than base model
+- [x] do NOT scale to 7B on Modal until training data improves significantly
+- [ ] package-specific adapters may be needed as dataset grows (deferred)
+
+## Next Actions
+
+1. [done] Run behavioral eval sanity check (10 questions, 3 modes)
+2. [done] Results: retrieval-only wins; current LoRA adapter is dead
+3. [next] Expand training dataset: mine more cards, improve question coverage, reduce negative ratio
+4. [next] Fix training observability: log loss, track dataset hashes, adapter metadata
+5. [next] Retrain with improved dataset and compare against retrieval-only baseline
+6. [skip] Do NOT create Modal / cloud GPU path until retrained adapter beats retrieval-only
+7. [future] Consider `repo-arch flow run` to get proper run tracking and REPORT.md generation
+
+## Artifacts
+
+- `.repo-arch/cache/history-*.jsonl` — mined commit history (4,086 commits)
+- `.repo-arch/cache/cards/` — 20 generated insight cards
+- `.repo-arch/review-state.json` — curation state (21 accepted, 11 rejected)
+- `.repo-arch/training-data/train.jsonl` — 82 training examples
+- `.repo-arch/training-data/valid.jsonl` — 10 validation examples
+- `.repo-arch/adapters/repo-arch-40c05f5/` — LoRA adapter (Qwen2.5-Coder-1.5B)
+- `.repo-arch/index/vectors.json` — embedding index
+- `.repo-arch/eval/pi-behavioral-questions.md` — 45 behavioral eval questions
