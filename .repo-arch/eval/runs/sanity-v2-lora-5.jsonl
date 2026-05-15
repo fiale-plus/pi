@@ -1,0 +1,5 @@
+{"question_id": 1, "question": "Which packages tend to co-change together, and what does that imply about their coupling?", "mode": "lora", "answer": "No historical warnings found. Standard review applies.", "latency": 2.63, "error": null}
+{"question_id": 2, "question": "When modifying `packages/ai/src/models.generated.ts`, which other files should you inspect?", "mode": "lora", "answer": "No historical warnings found. Standard review applies.", "latency": 1.85, "error": null}
+{"question_id": 3, "question": "What architectural decisions are visible around the unified LLM provider layer?", "mode": "lora", "answer": "No historical warnings found. Standard review applies.", "latency": 1.69, "error": null}
+{"question_id": 4, "question": "What is the risk profile of changing `packages/coding-agent/src/core/agent-session.ts`?", "mode": "lora", "answer": "No historical warnings found. Standard review applies.", "latency": 1.69, "error": null}
+{"question_id": 5, "question": "Which package boundaries are the most fragile based on historical breakages?", "mode": "lora", "answer": "No historical warnings found. Standard review applies.", "latency": 1.66, "error": null}

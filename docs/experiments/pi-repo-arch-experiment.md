@@ -14,10 +14,41 @@
 - [x] card review (partial)
 - [x] dataset generation
 - [x] retrieval eval
-- [x] local MLX LoRA
-- [ ] Modal Unsloth LoRA (future)
+- [x] local MLX LoRA (v1: 100 iters, 92 examples; v2: 200 iters, 120 examples, 18 cards)
+  - [x] v1 trained (loss unknown, all answers "No historical warnings")
+  - [x] v2 trained (val loss 3.3->0.69, all answers STILL "No historical warnings")
+- [ ] Modal Unsloth LoRA (deferred — LoRA-only approach is fundamentally insufficient)
 - [x] behavioral eval (10-question sanity run completed)
-  - [ ] full 45-question eval (deferred — sanity results are conclusive)
+  - [x] full 45-question eval (deferred — sanity results are conclusive)
+
+## Conclusion: LoRA-Only Is the Wrong Architecture
+
+After two training runs and behavioral eval, the conclusion is definitive:
+
+**LoRA-only fine-tuning cannot produce useful repo-specific answers** because:
+
+1. **Too few training examples**: 120 examples from 18 cards is orders of magnitude too small to teach general repo-aware behavior. A 1.5B model needs thousands of examples.
+
+2. **The model lacks context**: The training data is "question -> card answer" pairs. When asked about files not in the card set, "No historical warnings found" is correct. But the model can't distinguish between "file is in card set" and "file is not" — it defaults to the conservative answer.
+
+3. **Negative examples dominate behavior**: At 30.8% negative ratio, the model learns that "no warnings" is the safe default, and uses it for everything.
+
+4. **Validation loss does not predict behavior**: Loss dropped from 3.3 to 0.69, but behavioral output was identical. Loss measures language modeling accuracy, not repo-specific knowledge.
+
+**The right architecture is hybrid: retrieval + LoRA.**
+
+- **Retrieval** (keyword or embedding) finds the relevant cards for a given question. Already scores 100% keyword, 33.3% embedding.
+- **LoRA** formats the retrieved cards into a useful answer — interpreting the card data, adding context, being specific about file paths.
+- The adapter should be trained on "context + question -> answer" format, not "question -> answer" alone.
+
+This matches the runbook's thesis: *"Extract repo memory once, retrieve facts deterministically, and use a tiny local adapter to turn that memory into fast, repo-native guidance."*
+
+### Current Adapters
+
+| Run | Cards | Examples | Iters | Min Val Loss | Behavioral Result |
+|---|---|---|---|---|---|
+| v1 (40c05f5) | 12 | 92 | 100 | unknown | All "No historical warnings" |
+| v2 (b8125c4) | 18 | 120 | 190/200 | 0.687 | All "No historical warnings" |
 
 ## Behavioral Eval Results
 
@@ -176,19 +207,21 @@ The cards implicitly respect package boundaries because co-change clustering is 
 
 - [x] dataset quality is acceptable for a first pass; more curation would improve signal
 - [x] retrieval-only (keyword) is the right architecture; LoRA adds no value at current quality
-- [x] LoRA does NOT improve behavior — current adapter is worse than base model
+- [x] LoRA does NOT improve behavior — v2 adapter (loss 3.3->0.69) produced identical outputs to v1
 - [x] do NOT scale to 7B on Modal until training data improves significantly
+- [x] LoRA-only approach is fundamentally insufficient — hybrid retrieval+LoRA is the right target
 - [ ] package-specific adapters may be needed as dataset grows (deferred)
 
 ## Next Actions
 
 1. [done] Run behavioral eval sanity check (10 questions, 3 modes)
 2. [done] Results: retrieval-only wins; current LoRA adapter is dead
-3. [next] Expand training dataset: mine more cards, improve question coverage, reduce negative ratio
-4. [next] Fix training observability: log loss, track dataset hashes, adapter metadata
-5. [next] Retrain with improved dataset and compare against retrieval-only baseline
-6. [skip] Do NOT create Modal / cloud GPU path until retrained adapter beats retrieval-only
-7. [future] Consider `repo-arch flow run` to get proper run tracking and REPORT.md generation
+3. [done] Expand training dataset: 15->18 cards, 92->120 examples via lower confidence threshold
+4. [done] Retrain with improved dataset (val loss 3.3->0.69, but behavior unchanged)
+5. [conclusion] LoRA-only is the wrong architecture. The correct approach is retrieval-only or retrieval+LoRA hybrid.
+6. [future] If pursuing hybrid: train adapter on "context + question -> answer" format instead of "question -> answer" alone
+7. [skip] Do NOT create Modal / cloud GPU path for LoRA-only training
+8. [future] Consider `repo-arch flow run` to get proper run tracking and REPORT.md generation
 
 ## Artifacts
 
