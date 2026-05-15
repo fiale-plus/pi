@@ -1,0 +1,11 @@
+{
+  "total_cards": 25,
+  "accepted_cards": 18,
+  "rejected_cards": 7,
+  "positive_examples": 30,
+  "negative_examples": 7,
+  "train_examples": 33,
+  "valid_examples": 4,
+  "context_cards_per_example": 4,
+  "examples_per_card": 2
+}
