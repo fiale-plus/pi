@@ -1,0 +1,9 @@
+{
+  "total_examples": 542,
+  "train": 488,
+  "valid": 54,
+  "clusters_used": 174,
+  "max_clusters": 200,
+  "questions_per_cluster": 3,
+  "min_commits_per_file": 3
+}
