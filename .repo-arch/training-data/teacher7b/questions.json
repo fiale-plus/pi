@@ -1,0 +1,5 @@
+[
+  "How many commits touched packages/ai/src/stream.ts?",
+  "What is the commit history of packages/coding-agent/src/modes/interactive/interactive-mode.ts?",
+  "What is the commit history of packages/coding-agent/src/modes/rpc/rpc-mode.ts?"
+]
