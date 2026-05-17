@@ -1,0 +1,9 @@
+{
+  "total_examples": 117,
+  "train": 106,
+  "valid": 11,
+  "positive": 102,
+  "negative": 15,
+  "accepted_cards_used": 15,
+  "examples_per_card": 45
+}

@@ -1,0 +1,7 @@
+{
+  "total_generated": 280,
+  "skipped": 20,
+  "train": 252,
+  "valid": 28,
+  "questions_candidates": 300
+}

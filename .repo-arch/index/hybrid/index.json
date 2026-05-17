@@ -1,0 +1,7 @@
+{
+  "model": "all-MiniLM-L6-v2",
+  "commit_count": 4089,
+  "dimension": 384,
+  "embeddings_file": "embeddings.npy",
+  "bm25_docs": 4089
+}
