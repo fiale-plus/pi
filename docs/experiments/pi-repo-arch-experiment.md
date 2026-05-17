@@ -54,6 +54,17 @@ This matches the runbook's thesis: *"Extract repo memory once, retrieve facts de
 | teacher7b v1 | 18+ | 50 teacher targets | 300 | 0.73 | 83 pkg refs, 33/45 qs, beats FUSED v1 |
 | **teacher7b v2** | **18+** | **200 teacher targets** | **300** | **0.543** | **118 pkg refs, 35/45 qs, 0 deflections** |
 
+### Experiment chronology
+
+| Order | Phase | Data | Key change | Result |
+|---|---|---|---|---|
+| 1 | LoRA v1 | 92 examples | question -> answer | all "No historical warnings" |
+| 2 | LoRA v2 | 120 examples | more cards, still no context | all "No historical warnings" |
+| 3 | Retrieval baseline | cards + commits | deterministic facts | strong baseline |
+| 4 | FUSED v1 | cards + commits + base | fused retrieval + synthesis | 147 pkg refs, 30/45, 0 deflections |
+| 5 | Teacher7B v1 | 50 teacher targets | distilled 7B -> 1.5B | 83 pkg refs, 33/45, beats FUSED |
+| 6 | Teacher7B v2 | 200 teacher targets | more data, same rank/layers | 118 pkg refs, 35/45, 0 deflections |
+
 ## Behavioral Eval Results
 
 ### Setup
@@ -284,7 +295,16 @@ The cards implicitly respect package boundaries because co-change clustering is 
 - Adapter: `.repo-arch/adapters/teacher7b-v2/`
 - Teacher data: `.repo-arch/training-data/teacher7b/targets.jsonl`
 - Eval output: `.repo-arch/eval/runs/teacher7b-v2-45.jsonl`
+- Training log: `.repo-arch/adapters/teacher7b-v2/training.log`
 - Modal app: `pi-7b-teacher`
+
+### How to run inference
+
+```bash
+source /opt/homebrew/var/mtplx/venv-0.1.0rc3/bin/activate
+cd /Users/pavel/repos/fiale-plus/pi
+python3 scripts/hybrid_answer.py --question "What should I know about agent-session.ts?" --adapter .repo-arch/adapters/teacher7b-v2
+```
 
 ### Outcome
 
@@ -292,4 +312,23 @@ The cards implicitly respect package boundaries because co-change clustering is 
 - Behavioral eval: `118 pkg refs`, `35/45` questions with package refs, `0` deflections
 - Head-to-head: beats `TEACHER7B v1` and the retrieval/card baselines, close to `FUSED v1`
 - Current recommendation: keep retrieval local, use `teacher7b v2` as the best adapter for repo-native guidance
+
+### TTFS / TPS benchmark
+
+Warm-cache benchmark on 4 representative questions, 2 repeats each, `top_k=5`:
+
+- Cold load: `0.51s` (local cache warm)
+- Retrieval time: `290-324ms`
+- TTFS total: `615-906ms`
+- TTFS model-only: `322-616ms`
+- Throughput: `36.7-40.0 tok/s` (avg `38.14 tok/s`)
+
+This is the speed profile for the small adapter path (`hybrid_answer.py --adapter .repo-arch/adapters/teacher7b-v2`).
+
+### Modal issues encountered
+
+- `Secret.from_name(..., required=False)` changed in Modal 1.4.x
+- `Function.lookup()` is no longer the right entrypoint; use `Function.from_name()`
+- `container_idle_timeout` was renamed to `scaledown_window`
+- Batch results must carry `id` and `question` to avoid out-of-order mapping
 
