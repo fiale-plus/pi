@@ -1,5 +1,7 @@
 # pi repo-arch Experiment
 
+**Update (2026-05-17):** `teacher7b v2` is the current best adapter. See the new section at the end for reproduction steps, runtime requirements, and final eval numbers.
+
 ## Repo
 
 - Repo: fiale-plus/pi
@@ -17,7 +19,7 @@
 - [x] local MLX LoRA (v1: 100 iters, 92 examples; v2: 200 iters, 120 examples, 18 cards)
   - [x] v1 trained (loss unknown, all answers "No historical warnings")
   - [x] v2 trained (val loss 3.3->0.69, all answers STILL "No historical warnings")
-- [ ] Modal Unsloth LoRA (deferred — LoRA-only approach is fundamentally insufficient)
+- [x] Modal 7B teacher distillation (v1/v2 complete; v2 is current best)
 - [x] behavioral eval (10-question sanity run completed)
   - [x] full 45-question eval (deferred — sanity results are conclusive)
 
@@ -49,6 +51,8 @@ This matches the runbook's thesis: *"Extract repo memory once, retrieve facts de
 |---|---|---|---|---|---|
 | v1 (40c05f5) | 12 | 92 | 100 | unknown | All "No historical warnings" |
 | v2 (b8125c4) | 18 | 120 | 190/200 | 0.687 | All "No historical warnings" |
+| teacher7b v1 | 18+ | 50 teacher targets | 300 | 0.73 | 83 pkg refs, 33/45 qs, beats FUSED v1 |
+| **teacher7b v2** | **18+** | **200 teacher targets** | **300** | **0.543** | **118 pkg refs, 35/45 qs, 0 deflections** |
 
 ## Behavioral Eval Results
 
@@ -233,3 +237,59 @@ The cards implicitly respect package boundaries because co-change clustering is 
 - `.repo-arch/adapters/repo-arch-40c05f5/` — LoRA adapter (Qwen2.5-Coder-1.5B)
 - `.repo-arch/index/vectors.json` — embedding index
 - `.repo-arch/eval/pi-behavioral-questions.md` — 45 behavioral eval questions
+
+## Update: teacher7b v2
+
+### What to run
+
+1. Activate the MLX venv:
+   ```bash
+   source /opt/homebrew/var/mtplx/venv-0.1.0rc3/bin/activate
+   ```
+2. Deploy / refresh Modal 7B:
+   ```bash
+   cd /Users/pavel/repos/fiale-plus/pi && modal deploy scripts/modal_7b.py
+   ```
+3. Generate teacher targets:
+   ```bash
+   cd /Users/pavel/repos/fiale-plus/pi && modal run scripts/teacher_batch.py --limit 50
+   cd /Users/pavel/repos/fiale-plus/pi && modal run scripts/teacher_batch_v2.py --limit 150 --parallel 4
+   ```
+4. Train the adapter:
+   ```bash
+   cd /Users/pavel/repos/fiale-plus/pi && mlx_lm.lora \
+     --train \
+     --model Qwen/Qwen2.5-Coder-1.5B-Instruct \
+     --data /Users/pavel/repos/fiale-plus/pi/.repo-arch/training-data/teacher7b \
+     --adapter-path /Users/pavel/repos/fiale-plus/pi/.repo-arch/adapters/teacher7b-v2 \
+     --num-layers 4 \
+     --batch-size 4 \
+     --iters 300 \
+     --learning-rate 1e-5 \
+     --steps-per-report 10 \
+     --steps-per-eval 10 \
+     --save-every 100 \
+     --val-batches 10
+   ```
+5. Evaluate:
+   ```bash
+   cd /Users/pavel/repos/fiale-plus/pi && python3 scripts/eval_behavior.py \
+     --questions .repo-arch/eval/questions.jsonl \
+     --modes base retrieval lora \
+     --out .repo-arch/eval/runs/teacher7b-v2-45.jsonl
+   ```
+
+### Inputs / outputs
+
+- Adapter: `.repo-arch/adapters/teacher7b-v2/`
+- Teacher data: `.repo-arch/training-data/teacher7b/targets.jsonl`
+- Eval output: `.repo-arch/eval/runs/teacher7b-v2-45.jsonl`
+- Modal app: `pi-7b-teacher`
+
+### Outcome
+
+- Val loss: `2.19 -> 0.543`
+- Behavioral eval: `118 pkg refs`, `35/45` questions with package refs, `0` deflections
+- Head-to-head: beats `TEACHER7B v1` and the retrieval/card baselines, close to `FUSED v1`
+- Current recommendation: keep retrieval local, use `teacher7b v2` as the best adapter for repo-native guidance
+

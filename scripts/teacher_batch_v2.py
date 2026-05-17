@@ -68,6 +68,18 @@ def warm_generate(context: str, question: str, max_tokens: int = 1024, temperatu
     return {"answer": answer.strip(), "tokens": len(generated), "model": MODEL_NAME}
 
 
+def _call(item):
+    r = warm_generate.remote(item["context"], item["question"], 1024, 0.3)
+    return {
+        "id": item["id"],
+        "question": item["question"],
+        "context_len": len(item["context"]),
+        "answer": r["answer"],
+        "tokens": r["tokens"],
+        "model": r.get("model", MODEL_NAME),
+    }
+
+
 @app.local_entrypoint()
 def main(limit: int = 150, parallel: int = 4):
     import os
@@ -77,7 +89,6 @@ def main(limit: int = 150, parallel: int = 4):
     with open(os.path.join(repo_dir, BATCH_FILE)) as f:
         batch = json.load(f)
 
-    # Skip existing
     out_path = os.path.join(repo_dir, OUT_FILE)
     existing_ids = set()
     if os.path.exists(out_path):
@@ -86,29 +97,21 @@ def main(limit: int = 150, parallel: int = 4):
                 existing_ids.add(json.loads(line).get("id"))
 
     selected = [item for item in batch if item["id"] not in existing_ids][:limit]
-    print(f"Targets: {len(selected)} (skipping {len(existing_ids)} existing)")
+    print(f"Generating {len(selected)} teacher targets (parallel={parallel}, skipping {len(existing_ids)} existing)...")
 
-    # Warm up
     print("Warming container...")
     warm_generate.remote("test", "warmup", max_tokens=5)
 
-    # Parallel batch
     results = []
     with ThreadPoolExecutor(max_workers=parallel) as ex:
-        fut = {ex.submit(_call, item): item["id"] for item in selected}
+        futures = {ex.submit(_call, item): item["id"] for item in selected}
         done = 0
-        for f in as_completed(fut):
-            r = f.result()
+        for future in as_completed(futures):
+            r = future.result()
             results.append(r)
             done += 1
-            if done % 10 == 0:
-                print(f"  {done}/{len(selected)}")
-
-def _call(item):
-    r = warm_generate.remote(item["context"], item["question"], 1024, 0.3)
-    r["id"] = item["id"]
-    r["question"] = item["question"]
-    return r
+            status = "ok" if r.get("answer") else "ERR"
+            print(f"[{done}/{len(selected)}] Q{r['id']} ({r.get('tokens', 0)} tok) {status}")
 
     with open(out_path, "a") as f:
         for r in results:
@@ -119,5 +122,6 @@ def _call(item):
         for line in f:
             total += 1
 
-    print(f"\nDone. {len(results)} new, {total} total")
+    print(f"\nDone. {len(results)} new results appended (total: {total})")
     print(f"  Success: {sum(1 for r in results if r.get('answer'))}")
+    print(f"  Failed:  {sum(1 for r in results if not r.get('answer'))}")

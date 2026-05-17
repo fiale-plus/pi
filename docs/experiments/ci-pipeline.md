@@ -6,7 +6,7 @@
 Weekly cron / commit trigger
   → repo-arch mine + classify + cards
   → content-hash check (skip if unchanged)
-  → Modal 7B teacher generation (A10G, ~$0.15/batch)
+  → Modal 7B teacher generation (A10G, ~50 min total for 200 targets)
   → local MLX LoRA distillation (1-2B model)
   → 45+ question behavioral eval gate
   → publish blessed adapter
@@ -51,7 +51,8 @@ Compare new adapter vs current blessed on 45+ questions:
 ## Files
 
 - `scripts/modal_7b.py` — Modal 7B deployment
-- `scripts/teacher_batch.py` — Batch teacher generation
+- `scripts/teacher_batch.py` — Batch teacher generation (parallel baseline)
+- `scripts/teacher_batch_v2.py` — Warm-container batch generation
 - `scripts/teacher_gen.py` — Generate batch questions + context
-- `.repo-arch/adapters/teacher7b/` — Latest teacher-distilled adapter
+- `.repo-arch/adapters/teacher7b-v2/` — Current teacher-distilled adapter
 - `.repo-arch/training-data/teacher7b/` — Training data
